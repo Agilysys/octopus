@@ -123,6 +123,10 @@ class Octopus::Proxy
     @adapters.size > 1
   end
 
+  def shards
+    @shards.keys - [:master]
+  end
+
   def run_queries_on_shard(shard, &block)
     older_shard = self.current_shard
     last_block = self.block
