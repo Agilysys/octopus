@@ -9,6 +9,11 @@ class Octopus::Proxy
     initialize_replication(config) if !config.nil? && config["replicated"]
   end
 
+  def refresh_config(config = Octopus.config)
+    clean_proxy()
+    initialize_shards(config)
+    initialize_replication(config) if !config.nil? && config["replicated"]    
+  end
   def initialize_shards(config)
     @shards = HashWithIndifferentAccess.new
     @groups = {}
