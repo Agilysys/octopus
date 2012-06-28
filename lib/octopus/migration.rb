@@ -16,7 +16,6 @@ module Octopus::Migration
         announce_without_octopus("#{message} - #{get_current_shard}")
       end
 
-      alias_method_chain :migrate, :octopus
       alias_method_chain :announce, :octopus
       attr_accessor :current_shard
     end
