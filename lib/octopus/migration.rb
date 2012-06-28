@@ -9,6 +9,7 @@ module Octopus
         #alias_method_chain :migrate, :octopus
         alias_method_chain :announce, :octopus
         attr_accessor :current_shard
+        attr_accessor :current_group
       end
     end
 
@@ -21,6 +22,7 @@ module Octopus
         #alias_method_chain :migrate, :octopus
         alias_method_chain :announce, :octopus
         attr_accessor :current_shard
+        attr_accessor :current_group
       end
     end
 
@@ -50,6 +52,7 @@ module Octopus
 
         self.connection.block = true
         self.connection.current_group = groups
+        self.current_group = groups
       end
 
       self
@@ -61,14 +64,18 @@ module Octopus
     
     def shards
       shards = Set.new
-
-      if conn.current_group
-        [conn.current_group].flatten.each do |group|
+      conn = ActiveRecord::Base.connection
+      return shards unless conn.is_a?(Octopus::Proxy)
+      if current_shard.is_a?(Array)
+        shards.merge(current_shard)
+      else
+        shards.add(current_shard)        
+      end
+      if current_group
+        [current_group].flatten.each do |group|
           group_shards = conn.shards_for_group(group)
           shards.merge(group_shards) if group_shards
         end
-      elsif conn.current_shard.is_a?(Array)
-        shards.merge(conn.current_shard)
       end
       shards
     end
@@ -90,43 +97,89 @@ module Octopus
     #   end
     # end
   end
-  module Migrator
-    def self.extended(base)
-      class << base
-        alias_method_chain :run, :octopus
-      end
-      
-    end
-
+  module MigrationProxy
     def self.included(base)
-      base.class_eval do
-        alias_method_chain :run, :octopus
-      end
+      base.delegate :shards, :to => :migration
+    end    
+  end
+  module Migrator
+    def self.included(base)
+      base.alias_method_chain :migrate, :octopus
+      base.alias_method_chain :migrated, :octopus
     end
-    def run_with_octopus
-      conn = ActiveRecord::Base.connection
-      return run_without_octopus unless conn.is_a?(Octopus::Proxy)            
-      target = migrations.detect { |m| m.version == @target_version }
-      raise UnknownMigrationVersionError.new(@target_version) if target.nil?
-      shards = target.respond_to? :shards ? target.shards : []
+    def migrate_one migration
       begin
-        if shards.any?
-          conn.send_queries_to_multiple_shards(shards.to_a) do
-            run_without_octopus(direction)
-          end
-        else
-          run_without_octopus(direction)
+        ddl_transaction do
+          migration.migrate(@direction)
+          record_version_state_after_migrating(migration.version)
         end
-      ensure
-        conn.clean_proxy
+      rescue => e
+        canceled_msg = ActiveRecord::Base.connection.supports_ddl_transactions? ? "this and " : ""
+        raise StandardError, "An error has occurred, #{canceled_msg}all later migrations canceled:\n\n#{e}", e.backtrace
       end      
-    end  
+    end
+    def migrated_with_octopus
+      self.class.get_all_versions
+    end    
+    def migrate_with_octopus
+      conn = ActiveRecord::Base.connection
+      return migrate_without_octopus unless conn.is_a?(Octopus::Proxy)            
+
+      current = migrations.detect { |m| m.version == current_version }
+      target = migrations.detect { |m| m.version == @target_version }
+
+      if target.nil? && @target_version && @target_version > 0
+        raise ActiveRecord::UnknownMigrationVersionError.new(@target_version)
+      end
+
+      start = up? ? 0 : (migrations.index(current) || 0)
+      finish = migrations.index(target) || migrations.size - 1
+      runnable = migrations[start..finish]
+
+      # skip the last migration if we're headed down, but not ALL the way down
+      runnable.pop if down? && target
+
+      ran = []
+      runnable.each do |migration|
+        ActiveRecord::Base.logger.info "Migrating to #{migration.name} (#{migration.version})" if ActiveRecord::Base.logger
+        shards = migration.respond_to?(:shards) ? migration.shards : []
+        begin
+          if shards.any?
+            conn.send_queries_to_multiple_shards(shards.to_a) do
+              # On our way up, we skip migrating the ones we've already migrated
+              next if up? && migrated.include?(migration.version.to_i)
+
+              # On our way down, we skip reverting the ones we've never migrated
+              if down? && !migrated.include?(migration.version.to_i)
+                migration.announce 'never migrated, skipping'; migration.write
+                next
+              end
+              
+              migrate_one migration
+            end
+          else
+            # On our way up, we skip migrating the ones we've already migrated
+            next if up? && migrated.include?(migration.version.to_i)
+
+            # On our way down, we skip reverting the ones we've never migrated
+            if down? && !migrated.include?(migration.version.to_i)
+              migration.announce 'never migrated, skipping'; migration.write
+              next
+            end
+            migrate_one migration
+          end
+        ensure
+          conn.clean_proxy
+        end
+      end
+      ran
+    end
   end
 end
 if Octopus.rails31?
   ActiveRecord::Migration.send(:include, Octopus::Migration)
-  ActiveRecord::Migrator.send(:include, Octopus::Migrator)
 else
   ActiveRecord::Migration.extend(Octopus::Migration)
-  ActiveRecord::Migrator.extend(Octopus::Migrator)
 end
+ActiveRecord::Migrator.send(:include, Octopus::Migrator)
+ActiveRecord::MigrationProxy.send(:include, Octopus::MigrationProxy)
