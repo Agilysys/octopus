@@ -48,7 +48,7 @@ class Octopus::Proxy
           initialize_adapter(v['adapter'])
           config_with_octopus_shard = v.merge(:octopus_shard => k)
 
-          @shards[k.to_sym] = connection_pool_for(config_with_octopus_shard, "#{v['adapter']}_connection")
+          @shards[k.to_sym] = connection_pool_for(config_with_octopus_shard, "#{v['adapter']}_connection") unless v['adapter'].blank?
           @groups[key.to_s] << k.to_sym
         end
       end
@@ -126,6 +126,10 @@ class Octopus::Proxy
 
   def should_clean_table_name?
     @adapters.size > 1
+  end
+
+  def shards
+    @shards.keys - [:master]
   end
 
   def run_queries_on_shard(shard, &block)

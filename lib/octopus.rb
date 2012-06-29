@@ -85,6 +85,11 @@ module Octopus
     ActiveRecord::Base.connection.initialize_shards(@config)
   end
 
+  def self.groups=(groups)
+    config[rails_env()] = HashWithIndifferentAccess.new(groups)
+    ActiveRecord::Base.connection.initialize_shards(@config)
+  end
+
   def self.using(shard, &block)
     conn = ActiveRecord::Base.connection
 
