@@ -44,7 +44,6 @@ module Octopus
       if self.connection.is_a?(Octopus::Proxy)
         groups.each do |group|
           shards = self.connection.shards_for_group(group) || []
-
           shards.each do |shard|
             self.connection.check_schema_migrations(shard)
           end
@@ -66,13 +65,13 @@ module Octopus
       shards = Set.new
       conn = ActiveRecord::Base.connection
       return shards unless conn.is_a?(Octopus::Proxy)
-      if current_shard.is_a?(Array)
-        shards.merge(current_shard)
+      if self.class.current_shard.is_a?(Array)
+        shards.merge(self.class.current_shard)
       else
-        shards.add(current_shard)        
+        shards.add(self.class.current_shard) if self.class.current_shard       
       end
-      if current_group
-        [current_group].flatten.each do |group|
+      if self.class.current_group
+        [self.class.current_group].flatten.each do |group|
           group_shards = conn.shards_for_group(group)
           shards.merge(group_shards) if group_shards
         end
