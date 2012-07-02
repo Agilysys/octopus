@@ -6,7 +6,6 @@ module Octopus
           announce_without_octopus("#{message} - #{get_current_shard}")
         end
 
-        #alias_method_chain :migrate, :octopus
         alias_method_chain :announce, :octopus
         attr_accessor :current_shard
         attr_accessor :current_group
@@ -19,7 +18,6 @@ module Octopus
           announce_without_octopus("#{message} - #{get_current_shard}")
         end
 
-        #alias_method_chain :migrate, :octopus
         alias_method_chain :announce, :octopus
         attr_accessor :current_shard
         attr_accessor :current_group
@@ -78,29 +76,14 @@ module Octopus
       end
       shards
     end
-    # def migrate_with_octopus(direction)
-    #   conn = ActiveRecord::Base.connection
-    #   return migrate_without_octopus(direction) unless conn.is_a?(Octopus::Proxy)
-    #   self.connection().current_shard = self.current_shard if self.current_shard != nil
-    # 
-    #   begin
-    #     if shards.any?
-    #       conn.send_queries_to_multiple_shards(shards.to_a) do
-    #         migrate_without_octopus(direction)
-    #       end
-    #     else
-    #       migrate_without_octopus(direction)
-    #     end
-    #   ensure
-    #     conn.clean_proxy
-    #   end
-    # end
   end
+
   module MigrationProxy
     def self.included(base)
       base.delegate :shards, :to => :migration
     end    
   end
+
   module Migrator
     def self.included(base)
       base.alias_method_chain :migrate, :octopus
