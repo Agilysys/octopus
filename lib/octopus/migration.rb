@@ -7,32 +7,36 @@ module Octopus
         end
 
         alias_method_chain :announce, :octopus
+        class << self
         attr_accessor :current_shard
         attr_accessor :current_group
+        end
       end
     end
 
     def self.included(base)
+      base.extend ClassMethods
       base.class_eval do
         def announce_with_octopus(message)
           announce_without_octopus("#{message} - #{get_current_shard}")
         end
 
         alias_method_chain :announce, :octopus
-        attr_accessor :current_shard
-        attr_accessor :current_group
+        class << self
+          attr_accessor :current_shard
+          attr_accessor :current_group
+        end
       end
     end
-
+    module ClassMethods
     def using(*args)
       if self.connection().is_a?(Octopus::Proxy)
         args.each do |shard|
           self.connection().check_schema_migrations(shard)
         end
 
-        self.connection().block = true
         self.current_shard = args
-        self.connection().current_shard = args
+        
       end
 
       return self
@@ -47,14 +51,12 @@ module Octopus
           end
         end
 
-        self.connection.block = true
-        self.connection.current_group = groups
         self.current_group = groups
       end
 
       self
     end
-
+    end
     def get_current_shard
       "Shard: #{ActiveRecord::Base.connection.current_shard()}" if ActiveRecord::Base.connection.respond_to?(:current_shard)
     end
@@ -123,6 +125,7 @@ module Octopus
 
       ran = []
       runnable.each do |migration|
+        puts migration.instance_variable_get(:@migration)
         ActiveRecord::Base.logger.info "Migrating to #{migration.name} (#{migration.version})" if ActiveRecord::Base.logger
         shards = migration.respond_to?(:shards) ? migration.shards : []
         begin
