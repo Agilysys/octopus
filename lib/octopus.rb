@@ -105,6 +105,7 @@ module Octopus
       conn.current_shard = shard
       conn.block = true
     end
+  end    
   end
 end
 
