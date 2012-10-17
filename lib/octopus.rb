@@ -98,14 +98,14 @@ module Octopus
     else
       yield
     end
+  end
   def self.console_using(shard)
     conn = ActiveRecord::Base.connection
 
     if conn.is_a?(Octopus::Proxy)
       conn.current_shard = shard
       conn.block = true
-    end
-  end    
+    end   
   end
 end
 
